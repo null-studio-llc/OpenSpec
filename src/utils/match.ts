@@ -1,4 +1,13 @@
 export function nearestMatches(input: string, candidates: string[], max: number = 5): string[] {
+  if (!candidates.includes(input)) {
+    const leafMatches = candidates
+      .filter(candidate => candidate.split('/').at(-1) === input)
+      .sort((a, b) => a.localeCompare(b));
+    if (leafMatches.length > 0) {
+      return leafMatches.slice(0, max);
+    }
+  }
+
   const scored = candidates.map(candidate => ({ candidate, distance: levenshtein(input, candidate) }));
   scored.sort((a, b) => a.distance - b.distance);
   return scored.slice(0, max).map(s => s.candidate);
@@ -22,5 +31,4 @@ export function levenshtein(a: string, b: string): number {
   }
   return dp[m][n];
 }
-
 

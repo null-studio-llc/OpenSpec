@@ -8,6 +8,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import chalk from 'chalk';
+import fg from 'fast-glob';
 import {
   extractRequirementsSection,
   parseDeltaSpec,
@@ -15,12 +16,14 @@ import {
   type RequirementBlock,
 } from './parsers/requirement-blocks.js';
 import { Validator } from './validation/validator.js';
+import { pathToSpecId, specIdToPath } from '../utils/spec-paths.js';
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
 export interface SpecUpdate {
+  specId: string;
   source: string;
   target: string;
   exists: boolean;
@@ -54,44 +57,43 @@ export interface SpecsApplyOutput {
  * Find all delta spec files that need to be applied from a change.
  */
 export async function findSpecUpdates(changeDir: string, mainSpecsDir: string): Promise<SpecUpdate[]> {
-  const updates: SpecUpdate[] = [];
   const changeSpecsDir = path.join(changeDir, 'specs');
 
   try {
-    const entries = await fs.readdir(changeSpecsDir, { withFileTypes: true });
+    const specFiles = await fg('**/spec.md', {
+      cwd: changeSpecsDir,
+      absolute: true,
+      onlyFiles: true,
+      dot: false,
+      ignore: ['**/.*/**'],
+    });
 
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const specFile = path.join(changeSpecsDir, entry.name, 'spec.md');
-        const targetFile = path.join(mainSpecsDir, entry.name, 'spec.md');
+    const updates = await Promise.all(
+      specFiles.map(async source => {
+        const specId = pathToSpecId(source, changeSpecsDir);
+        const target = specIdToPath(specId, mainSpecsDir);
 
+        let exists = false;
         try {
-          await fs.access(specFile);
-
-          // Check if target exists
-          let exists = false;
-          try {
-            await fs.access(targetFile);
-            exists = true;
-          } catch {
-            exists = false;
-          }
-
-          updates.push({
-            source: specFile,
-            target: targetFile,
-            exists,
-          });
+          await fs.access(target);
+          exists = true;
         } catch {
-          // Source spec doesn't exist, skip
+          exists = false;
         }
-      }
-    }
-  } catch {
-    // No specs directory in change
-  }
 
-  return updates;
+        return {
+          specId,
+          source,
+          target,
+          exists,
+        };
+      })
+    );
+
+    return updates.sort((a, b) => a.specId.localeCompare(b.specId));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -107,7 +109,7 @@ export async function buildUpdatedSpec(
 
   // Parse deltas from the change spec file
   const plan = parseDeltaSpec(changeContent);
-  const specName = path.basename(path.dirname(update.target));
+  const specName = update.specId;
 
   // Pre-validate duplicates within sections
   const addedNames = new Set<string>();
@@ -193,7 +195,7 @@ export async function buildUpdatedSpec(
   const hasAnyDelta = plan.added.length + plan.modified.length + plan.removed.length + plan.renamed.length > 0;
   if (!hasAnyDelta) {
     throw new Error(
-      `Delta parsing found no operations for ${path.basename(path.dirname(update.source))}. ` +
+      `Delta parsing found no operations for ${update.specId}. ` +
         `Provide ADDED/MODIFIED/REMOVED/RENAMED sections in change spec.`
     );
   }
@@ -349,8 +351,7 @@ export async function writeUpdatedSpec(
   await fs.mkdir(targetDir, { recursive: true });
   await fs.writeFile(update.target, rebuilt);
 
-  const specName = path.basename(path.dirname(update.target));
-  console.log(`Applying changes to openspec/specs/${specName}/spec.md:`);
+  console.log(`Applying changes to openspec/specs/${update.specId}/spec.md:`);
   if (counts.added) console.log(`  + ${counts.added} added`);
   if (counts.modified) console.log(`  ~ ${counts.modified} modified`);
   if (counts.removed) console.log(`  - ${counts.removed} removed`);
@@ -360,8 +361,8 @@ export async function writeUpdatedSpec(
 /**
  * Build a skeleton spec for new capabilities.
  */
-export function buildSpecSkeleton(specFolderName: string, changeName: string): string {
-  const titleBase = specFolderName;
+export function buildSpecSkeleton(specId: string, changeName: string): string {
+  const titleBase = specId;
   return `# ${titleBase} Specification\n\n## Purpose\nTBD - created by archiving change ${changeName}. Update Purpose after archive.\n\n## Requirements\n`;
 }
 
@@ -423,14 +424,13 @@ export async function applySpecs(
   if (!options.skipValidation) {
     const validator = new Validator();
     for (const p of prepared) {
-      const specName = path.basename(path.dirname(p.update.target));
-      const report = await validator.validateSpecContent(specName, p.rebuilt);
+      const report = await validator.validateSpecContent(p.update.specId, p.rebuilt);
       if (!report.valid) {
         const errors = report.issues
           .filter((i) => i.level === 'ERROR')
           .map((i) => `  ✗ ${i.message}`)
           .join('\n');
-        throw new Error(`Validation errors in rebuilt spec for ${specName}:\n${errors}`);
+        throw new Error(`Validation errors in rebuilt spec for ${p.update.specId}:\n${errors}`);
       }
     }
   }
@@ -440,7 +440,7 @@ export async function applySpecs(
   const totals = { added: 0, modified: 0, removed: 0, renamed: 0 };
 
   for (const p of prepared) {
-    const capability = path.basename(path.dirname(p.update.target));
+    const capability = p.update.specId;
 
     if (!options.dryRun) {
       // Write the updated spec

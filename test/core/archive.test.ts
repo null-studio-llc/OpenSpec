@@ -803,5 +803,36 @@ E1 updated`);
       // Verify change was not archived
       await expect(fs.access(changeDir)).resolves.not.toThrow();
     });
+
+    it('should archive hierarchical delta specs into nested spec paths', async () => {
+      const changeName = 'nested-spec-feature';
+      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      const changeSpecDir = path.join(changeDir, 'specs', 'cli', 'show');
+      await fs.mkdir(changeSpecDir, { recursive: true });
+
+      const specContent = `# CLI Show Spec - Changes
+
+## ADDED Requirements
+
+### Requirement: CLI show SHALL support nested specs
+The CLI show command SHALL support nested specs.
+
+#### Scenario: Show nested spec
+- **GIVEN** a hierarchical spec exists
+- **WHEN** the user requests the spec
+- **THEN** the spec is displayed`;
+      await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
+
+      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+
+      const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'cli', 'show', 'spec.md');
+      const updatedContent = await fs.readFile(mainSpecPath, 'utf-8');
+      expect(updatedContent).toContain('# cli/show Specification');
+      expect(updatedContent).toContain('### Requirement: CLI show SHALL support nested specs');
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('cli/show: create'));
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('Applying changes to openspec/specs/cli/show/spec.md:')
+      );
+    });
   });
 });

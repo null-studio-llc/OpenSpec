@@ -18,6 +18,20 @@ describe('ChangeCommand.show/validate', () => {
     await fs.mkdir(changesDir, { recursive: true });
     const proposal = `# Change: Sample Change\n\n## Why\nConsistency in tests.\n\n## What Changes\n- **auth:** Add requirement`;
     await fs.writeFile(path.join(changesDir, 'proposal.md'), proposal, 'utf-8');
+    const deltaDir = path.join(changesDir, 'specs', 'cli', 'show');
+    await fs.mkdir(deltaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(deltaDir, 'spec.md'),
+      `## ADDED Requirements
+
+### Requirement: CLI show SHALL parse hierarchical delta specs
+The parser SHALL parse hierarchical delta specs.
+
+#### Scenario: Nested delta spec exists
+- **WHEN** change parsing runs
+- **THEN** the delta is associated with cli/show`,
+      'utf-8'
+    );
     process.chdir(tempRoot);
     changeName = 'sample-change';
   });
@@ -41,6 +55,7 @@ describe('ChangeCommand.show/validate', () => {
       const parsed = JSON.parse(output);
       expect(parsed).toHaveProperty('deltas');
       expect(Array.isArray(parsed.deltas)).toBe(true);
+      expect(parsed.deltas.some((delta: any) => delta.spec === 'cli/show')).toBe(true);
     } finally {
       console.log = origLog;
     }

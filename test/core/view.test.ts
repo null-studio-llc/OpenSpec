@@ -125,5 +125,20 @@ describe('ViewCommand', () => {
       'gamma-change'
     ]);
   });
-});
 
+  it('displays hierarchical spec IDs in the specifications section', async () => {
+    const specsDir = path.join(tempDir, 'openspec', 'specs');
+    await fs.mkdir(path.join(specsDir, 'cli', 'show'), { recursive: true });
+    await fs.writeFile(
+      path.join(specsDir, 'cli', 'show', 'spec.md'),
+      '## Purpose\nNested spec.\n\n## Requirements\n\n### Requirement: X\nText\n'
+    );
+
+    const viewCommand = new ViewCommand();
+    await viewCommand.execute(tempDir);
+
+    const output = logOutput.map(stripAnsi).join('\n');
+    expect(output).toContain('Specifications');
+    expect(output).toContain('cli/show');
+  });
+});

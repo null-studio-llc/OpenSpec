@@ -22,6 +22,10 @@ describe('top-level show command', () => {
     const specContent = `## Purpose\nAuth spec.\n\n## Requirements\n\n### Requirement: User Authentication\nText\n`;
     await fs.mkdir(path.join(specsDir, 'auth'), { recursive: true });
     await fs.writeFile(path.join(specsDir, 'auth', 'spec.md'), specContent, 'utf-8');
+
+    const nestedSpecContent = `## Purpose\nCLI show spec.\n\n## Requirements\n\n### Requirement: CLI show SHALL work\nText\n`;
+    await fs.mkdir(path.join(specsDir, 'cli', 'show'), { recursive: true });
+    await fs.writeFile(path.join(specsDir, 'cli', 'show', 'spec.md'), nestedSpecContent, 'utf-8');
   });
 
   afterEach(async () => {
@@ -77,6 +81,18 @@ describe('top-level show command', () => {
     }
   });
 
+  it('auto-detects hierarchical spec ids', () => {
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(testDir);
+      const output = execSync(`node ${openspecBin} show cli/show --json`, { encoding: 'utf-8' });
+      const json = JSON.parse(output);
+      expect(json.id).toBe('cli/show');
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   it('handles ambiguity and suggests --type', async () => {
     // create matching spec and change named 'foo'
     await fs.mkdir(path.join(changesDir, 'foo'), { recursive: true });
@@ -118,6 +134,21 @@ describe('top-level show command', () => {
       process.chdir(originalCwd);
     }
   });
-});
 
+  it('suggests hierarchical specs by leaf segment', () => {
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(testDir);
+      let err: any;
+      try {
+        execSync(`node ${openspecBin} show show`, { encoding: 'utf-8' });
+      } catch (e) { err = e; }
+      expect(err).toBeDefined();
+      expect(err.status).not.toBe(0);
+      expect(err.stderr.toString()).toContain('cli/show');
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+});
 

@@ -161,5 +161,25 @@ Regular text that should be ignored
       expect(logOutput.some(line => line.includes('partial') && line.includes('1/3 tasks'))).toBe(true);
       expect(logOutput.some(line => line.includes('no-tasks') && line.includes('No tasks'))).toBe(true);
     });
+
+    it('should list hierarchical specs and support subtree filtering', async () => {
+      const specsDir = path.join(tempDir, 'openspec', 'specs');
+      const specBody = '## Purpose\nTest.\n\n## Requirements\n\n### Requirement: X\nText\n';
+
+      await fs.mkdir(path.join(specsDir, 'cli-show'), { recursive: true });
+      await fs.writeFile(path.join(specsDir, 'cli-show', 'spec.md'), specBody);
+      await fs.mkdir(path.join(specsDir, 'cli', 'show'), { recursive: true });
+      await fs.writeFile(path.join(specsDir, 'cli', 'show', 'spec.md'), specBody);
+      await fs.mkdir(path.join(specsDir, 'cli', 'list'), { recursive: true });
+      await fs.writeFile(path.join(specsDir, 'cli', 'list', 'spec.md'), specBody);
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'specs', { subtree: 'cli/' });
+
+      expect(logOutput).toContain('Specs:');
+      expect(logOutput.some(line => line.includes('cli/show'))).toBe(true);
+      expect(logOutput.some(line => line.includes('cli/list'))).toBe(true);
+      expect(logOutput.some(line => line.includes('cli-show'))).toBe(false);
+    });
   });
 });

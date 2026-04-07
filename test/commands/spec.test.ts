@@ -48,6 +48,22 @@ The system SHALL process credit card payments securely`;
 
     await fs.mkdir(path.join(specsDir, 'payment'), { recursive: true });
     await fs.writeFile(path.join(specsDir, 'payment', 'spec.md'), testSpec2);
+
+    const nestedSpec = `## Purpose
+This specification defines the CLI show command.
+
+## Requirements
+
+### Requirement: CLI show SHALL display nested specs
+The CLI show command SHALL display nested specs.
+
+#### Scenario: Show nested spec
+- **GIVEN** a hierarchical spec exists
+- **WHEN** the user shows it
+- **THEN** the CLI returns the raw spec`;
+
+    await fs.mkdir(path.join(specsDir, 'cli', 'show'), { recursive: true });
+    await fs.writeFile(path.join(specsDir, 'cli', 'show', 'spec.md'), nestedSpec);
   });
 
   afterEach(async () => {
@@ -154,6 +170,21 @@ The system SHALL process credit card payments securely`;
         process.chdir(originalCwd);
       }
     });
+
+    it('should display hierarchical specs in text format', async () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        const output = execSync(`node ${openspecBin} spec show cli/show`, {
+          encoding: 'utf-8'
+        });
+
+        const raw = await fs.readFile(path.join(specsDir, 'cli', 'show', 'spec.md'), 'utf-8');
+        expect(output.trim()).toBe(raw.trim());
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
   });
 
   describe('spec list', () => {
@@ -183,10 +214,27 @@ The system SHALL process credit card payments securely`;
         });
         
         const json = JSON.parse(output);
-        expect(json).toHaveLength(2);
+        expect(json).toHaveLength(3);
         expect(json.find((s: any) => s.id === 'auth')).toBeDefined();
         expect(json.find((s: any) => s.id === 'payment')).toBeDefined();
+        expect(json.find((s: any) => s.id === 'cli/show')).toBeDefined();
         expect(json[0].requirementCount).toBeDefined();
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
+    it('should filter specs by subtree and show hierarchical IDs', () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        const output = execSync(`node ${openspecBin} spec list cli/`, {
+          encoding: 'utf-8'
+        });
+
+        expect(output).toContain('cli/show');
+        expect(output).not.toContain('auth');
+        expect(output).not.toContain('payment');
       } finally {
         process.chdir(originalCwd);
       }
@@ -238,6 +286,20 @@ The system SHALL process credit card payments securely`;
         const json = JSON.parse(output);
         expect(json.valid).toBeDefined();
         // In strict mode, warnings also affect validity
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
+    it('should validate hierarchical specs', () => {
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testDir);
+        const output = execSync(`node ${openspecBin} spec validate cli/show`, {
+          encoding: 'utf-8'
+        });
+
+        expect(output).toContain("Specification 'cli/show' is valid");
       } finally {
         process.chdir(originalCwd);
       }

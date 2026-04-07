@@ -1,11 +1,11 @@
 import { program } from 'commander';
-import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync } from 'fs';
 import { MarkdownParser } from '../core/parsers/markdown-parser.js';
 import { Validator } from '../core/validation/validator.js';
 import type { Spec } from '../core/schemas/index.js';
 import { isInteractive } from '../utils/interactive.js';
 import { getSpecIds } from '../utils/item-discovery.js';
+import { specIdToPath } from '../utils/spec-paths.js';
 
 const SPECS_DIR = 'openspec/specs';
 
@@ -64,6 +64,32 @@ function printSpecTextRaw(specPath: string): void {
   console.log(content);
 }
 
+function normalizeSpecQuery(query: string): { value: string; explicitSubtree: boolean } {
+  const normalized = query.replace(/\\/g, '/');
+  return {
+    value: normalized.replace(/^\/+|\/+$/g, ''),
+    explicitSubtree: normalized.endsWith('/'),
+  };
+}
+
+function filterSpecIds(specIds: string[], subtree?: string): string[] {
+  if (!subtree) return specIds;
+
+  const { value, explicitSubtree } = normalizeSpecQuery(subtree);
+  if (!value) return specIds;
+
+  const subtreePrefix = `${value}/`;
+  if (explicitSubtree) {
+    return specIds.filter(id => id.startsWith(subtreePrefix));
+  }
+
+  if (specIds.includes(value)) {
+    return specIds.filter(id => id === value);
+  }
+
+  return specIds.filter(id => id.startsWith(subtreePrefix));
+}
+
 export class SpecCommand {
   private SPECS_DIR = 'openspec/specs';
 
@@ -82,7 +108,7 @@ export class SpecCommand {
       }
     }
 
-    const specPath = join(this.SPECS_DIR, specId, 'spec.md');
+    const specPath = specIdToPath(specId, this.SPECS_DIR);
     if (!existsSync(specPath)) {
       throw new Error(`Spec '${specId}' not found at openspec/specs/${specId}/spec.md`);
     }
@@ -137,41 +163,36 @@ export function registerSpecCommand(rootProgram: typeof program) {
     });
 
   specCommand
-    .command('list')
-    .description('List all available specifications')
+    .command('list [subtree]')
+    .description('List all available specifications, optionally filtered by a subtree such as "cli/"')
     .option('--json', 'Output as JSON')
     .option('--long', 'Show id and title with counts')
-    .action((options: { json?: boolean; long?: boolean }) => {
+    .action(async (subtree: string | undefined, options: { json?: boolean; long?: boolean }) => {
       try {
-        if (!existsSync(SPECS_DIR)) {
+        const specIds = filterSpecIds(await getSpecIds(), subtree);
+        if (specIds.length === 0) {
           console.log('No items found');
           return;
         }
 
-        const specs = readdirSync(SPECS_DIR, { withFileTypes: true })
-          .filter(dirent => dirent.isDirectory())
-          .map(dirent => {
-            const specPath = join(SPECS_DIR, dirent.name, 'spec.md');
-            if (existsSync(specPath)) {
-              try {
-                const spec = parseSpecFromFile(specPath, dirent.name);
-                
-                return {
-                  id: dirent.name,
-                  title: spec.name,
-                  requirementCount: spec.requirements.length
-                };
-              } catch {
-                return {
-                  id: dirent.name,
-                  title: dirent.name,
-                  requirementCount: 0
-                };
-              }
+        const specs = specIds
+          .map(id => {
+            const specPath = specIdToPath(id, SPECS_DIR);
+            try {
+              const spec = parseSpecFromFile(specPath, id);
+              return {
+                id,
+                title: spec.name,
+                requirementCount: spec.requirements.length,
+              };
+            } catch {
+              return {
+                id,
+                title: id,
+                requirementCount: 0,
+              };
             }
-            return null;
           })
-          .filter((spec): spec is { id: string; title: string; requirementCount: number } => spec !== null)
           .sort((a, b) => a.id.localeCompare(b.id));
 
         if (options.json) {
@@ -217,7 +238,7 @@ export function registerSpecCommand(rootProgram: typeof program) {
           }
         }
 
-        const specPath = join(SPECS_DIR, specId, 'spec.md');
+        const specPath = specIdToPath(specId, SPECS_DIR);
         
         if (!existsSync(specPath)) {
           throw new Error(`Spec '${specId}' not found at openspec/specs/${specId}/spec.md`);

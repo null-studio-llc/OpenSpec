@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import fg from 'fast-glob';
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { Validator } from './validation/validator.js';
 import chalk from 'chalk';
@@ -114,19 +115,21 @@ export class ArchiveCommand {
       const changeSpecsDir = path.join(changeDir, 'specs');
       let hasDeltaSpecs = false;
       try {
-        const candidates = await fs.readdir(changeSpecsDir, { withFileTypes: true });
-        for (const c of candidates) {
-          if (c.isDirectory()) {
-            try {
-              const candidatePath = path.join(changeSpecsDir, c.name, 'spec.md');
-              await fs.access(candidatePath);
-              const content = await fs.readFile(candidatePath, 'utf-8');
-              if (/^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)) {
-                hasDeltaSpecs = true;
-                break;
-              }
-            } catch {}
-          }
+        const candidates = await fg('**/spec.md', {
+          cwd: changeSpecsDir,
+          absolute: true,
+          onlyFiles: true,
+          dot: false,
+          ignore: ['**/.*/**'],
+        });
+        for (const candidatePath of candidates) {
+          try {
+            const content = await fs.readFile(candidatePath, 'utf-8');
+            if (/^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)) {
+              hasDeltaSpecs = true;
+              break;
+            }
+          } catch {}
         }
       } catch {}
       if (hasDeltaSpecs) {
@@ -204,8 +207,7 @@ export class ArchiveCommand {
         console.log('\nSpecs to update:');
         for (const update of specUpdates) {
           const status = update.exists ? 'update' : 'create';
-          const capability = path.basename(path.dirname(update.target));
-          console.log(`  ${capability}: ${status}`);
+          console.log(`  ${update.specId}: ${status}`);
         }
 
         let shouldUpdateSpecs = true;
@@ -237,11 +239,10 @@ export class ArchiveCommand {
           // All validations passed; pre-validate rebuilt full spec and then write files and display counts
           let totals = { added: 0, modified: 0, removed: 0, renamed: 0 };
           for (const p of prepared) {
-            const specName = path.basename(path.dirname(p.update.target));
             if (!skipValidation) {
-              const report = await new Validator().validateSpecContent(specName, p.rebuilt);
+              const report = await new Validator().validateSpecContent(p.update.specId, p.rebuilt);
               if (!report.valid) {
-                console.log(chalk.red(`\nValidation errors in rebuilt spec for ${specName} (will not write changes):`));
+                console.log(chalk.red(`\nValidation errors in rebuilt spec for ${p.update.specId} (will not write changes):`));
                 for (const issue of report.issues) {
                   if (issue.level === 'ERROR') console.log(chalk.red(`  ✗ ${issue.message}`));
                   else if (issue.level === 'WARNING') console.log(chalk.yellow(`  ⚠ ${issue.message}`));

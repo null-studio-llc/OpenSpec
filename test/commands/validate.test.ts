@@ -31,6 +31,9 @@ describe('top-level validate command', () => {
     await fs.mkdir(path.join(specsDir, 'alpha'), { recursive: true });
     await fs.writeFile(path.join(specsDir, 'alpha', 'spec.md'), specContent, 'utf-8');
 
+    await fs.mkdir(path.join(specsDir, 'cli', 'show'), { recursive: true });
+    await fs.writeFile(path.join(specsDir, 'cli', 'show', 'spec.md'), specContent, 'utf-8');
+
     // Create a simple change with bullets (parser supports this)
     const changeContent = `# Test Change\n\n## Why\nBecause reasons that are sufficiently long for validation.\n\n## What Changes\n- **alpha:** Add something`;
     await fs.mkdir(path.join(changesDir, 'c1'), { recursive: true });
@@ -87,6 +90,7 @@ describe('top-level validate command', () => {
     expect(output).not.toBe('');
     const json = JSON.parse(output);
     expect(json.items.every((i: any) => i.type === 'spec')).toBe(true);
+    expect(json.items.some((i: any) => i.id === 'cli/show')).toBe(true);
   });
 
   it('errors on ambiguous item names and suggests type override', async () => {
@@ -129,6 +133,12 @@ describe('top-level validate command', () => {
 
     const result = await runCLI(['validate', changeId], { cwd: testDir });
     expect(result.exitCode).toBe(0);
+  });
+
+  it('validates hierarchical specs directly', async () => {
+    const result = await runCLI(['validate', 'cli/show'], { cwd: testDir });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Specification 'cli/show' is valid");
   });
 
   it('respects --no-interactive flag passed via CLI', async () => {

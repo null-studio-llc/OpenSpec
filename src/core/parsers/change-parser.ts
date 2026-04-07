@@ -2,6 +2,8 @@ import { MarkdownParser, Section } from './markdown-parser.js';
 import { Change, Delta, DeltaOperation, Requirement } from '../schemas/index.js';
 import path from 'path';
 import { promises as fs } from 'fs';
+import fg from 'fast-glob';
+import { pathToSpecId } from '../../utils/spec-paths.js';
 
 interface DeltaSection {
   operation: DeltaOperation;
@@ -56,14 +58,17 @@ export class ChangeParser extends MarkdownParser {
     const deltas: Delta[] = [];
     
     try {
-      const specDirs = await fs.readdir(specsDir, { withFileTypes: true });
-      
-      for (const dir of specDirs) {
-        if (!dir.isDirectory()) continue;
-        
-        const specName = dir.name;
-        const specFile = path.join(specsDir, specName, 'spec.md');
-        
+      const specFiles = await fg('**/spec.md', {
+        cwd: specsDir,
+        absolute: true,
+        onlyFiles: true,
+        dot: false,
+        ignore: ['**/.*/**'],
+      });
+
+      for (const specFile of specFiles) {
+        const specName = pathToSpecId(specFile, specsDir);
+
         try {
           const content = await fs.readFile(specFile, 'utf-8');
           const specDeltas = this.parseSpecDeltas(specName, content);

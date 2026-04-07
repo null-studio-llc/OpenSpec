@@ -1,5 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import fg from 'fast-glob';
+import { pathToSpecId } from './spec-paths.js';
 
 export async function getActiveChangeIds(root: string = process.cwd()): Promise<string[]> {
   const changesPath = path.join(root, 'openspec', 'changes');
@@ -24,23 +26,18 @@ export async function getActiveChangeIds(root: string = process.cwd()): Promise<
 
 export async function getSpecIds(root: string = process.cwd()): Promise<string[]> {
   const specsPath = path.join(root, 'openspec', 'specs');
-  const result: string[] = [];
   try {
-    const entries = await fs.readdir(specsPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-      const specFile = path.join(specsPath, entry.name, 'spec.md');
-      try {
-        await fs.access(specFile);
-        result.push(entry.name);
-      } catch {
-        // ignore
-      }
-    }
+    const specFiles = await fg('**/spec.md', {
+      cwd: specsPath,
+      absolute: true,
+      onlyFiles: true,
+      dot: false,
+      ignore: ['**/.*/**'],
+    });
+    return specFiles.map(filePath => pathToSpecId(filePath, specsPath)).sort();
   } catch {
-    // ignore
+    return [];
   }
-  return result.sort();
 }
 
 export async function getArchivedChangeIds(root: string = process.cwd()): Promise<string[]> {
@@ -63,4 +60,3 @@ export async function getArchivedChangeIds(root: string = process.cwd()): Promis
     return [];
   }
 }
-

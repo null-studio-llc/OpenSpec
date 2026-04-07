@@ -14,5 +14,8 @@ export {
 // File system utilities
 export { FileSystemUtils, removeMarkerBlock } from './file-system.js';
 
+// Spec path utilities
+export { specIdToPath, pathToSpecId } from './spec-paths.js';
+
 // Command reference utilities
 export { transformToHyphenCommands } from './command-references.js';

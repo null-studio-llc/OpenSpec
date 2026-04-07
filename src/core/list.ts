@@ -2,8 +2,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { readFileSync } from 'fs';
-import { join } from 'path';
 import { MarkdownParser } from './parsers/markdown-parser.js';
+import { getSpecIds } from '../utils/item-discovery.js';
+import { specIdToPath } from '../utils/spec-paths.js';
 
 interface ChangeInfo {
   name: string;
@@ -15,6 +16,33 @@ interface ChangeInfo {
 interface ListOptions {
   sort?: 'recent' | 'name';
   json?: boolean;
+  subtree?: string;
+}
+
+function normalizeSpecQuery(query: string): { value: string; explicitSubtree: boolean } {
+  const normalized = query.replace(/\\/g, '/');
+  return {
+    value: normalized.replace(/^\/+|\/+$/g, ''),
+    explicitSubtree: normalized.endsWith('/'),
+  };
+}
+
+function filterSpecIds(specIds: string[], subtree?: string): string[] {
+  if (!subtree) return specIds;
+
+  const { value, explicitSubtree } = normalizeSpecQuery(subtree);
+  if (!value) return specIds;
+
+  const subtreePrefix = `${value}/`;
+  if (explicitSubtree) {
+    return specIds.filter(id => id.startsWith(subtreePrefix));
+  }
+
+  if (specIds.includes(value)) {
+    return specIds.filter(id => id === value);
+  }
+
+  return specIds.filter(id => id.startsWith(subtreePrefix));
 }
 
 /**
@@ -76,7 +104,7 @@ function formatRelativeTime(date: Date): string {
 
 export class ListCommand {
   async execute(targetPath: string = '.', mode: 'changes' | 'specs' = 'changes', options: ListOptions = {}): Promise<void> {
-    const { sort = 'recent', json = false } = options;
+    const { sort = 'recent', json = false, subtree } = options;
 
     if (mode === 'changes') {
       const changesDir = path.join(targetPath, 'openspec', 'changes');
@@ -160,17 +188,16 @@ export class ListCommand {
       return;
     }
 
-    const entries = await fs.readdir(specsDir, { withFileTypes: true });
-    const specDirs = entries.filter(e => e.isDirectory()).map(e => e.name);
-    if (specDirs.length === 0) {
+    const specIds = filterSpecIds(await getSpecIds(targetPath), subtree);
+    if (specIds.length === 0) {
       console.log('No specs found.');
       return;
     }
 
     type SpecInfo = { id: string; requirementCount: number };
     const specs: SpecInfo[] = [];
-    for (const id of specDirs) {
-      const specPath = join(specsDir, id, 'spec.md');
+    for (const id of specIds) {
+      const specPath = specIdToPath(id, specsDir);
       try {
         const content = readFileSync(specPath, 'utf-8');
         const parser = new MarkdownParser(content);

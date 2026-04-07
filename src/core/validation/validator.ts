@@ -12,6 +12,8 @@ import {
 } from './constants.js';
 import { parseDeltaSpec, normalizeRequirementName } from '../parsers/requirement-blocks.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
+import fg from 'fast-glob';
+import { pathToSpecId } from '../../utils/spec-paths.js';
 
 export class Validator {
   private strictMode: boolean;
@@ -119,11 +121,15 @@ export class Validator {
     const emptySectionSpecs: Array<{ path: string; sections: string[] }> = [];
 
     try {
-      const entries = await fs.readdir(specsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const specName = entry.name;
-        const specFile = path.join(specsDir, specName, 'spec.md');
+      const specFiles = await fg('**/spec.md', {
+        cwd: specsDir,
+        absolute: true,
+        onlyFiles: true,
+        dot: false,
+        ignore: ['**/.*/**'],
+      });
+      for (const specFile of specFiles) {
+        const specName = pathToSpecId(specFile, specsDir);
         let content: string | undefined;
         try {
           content = await fs.readFile(specFile, 'utf-8');
@@ -362,16 +368,19 @@ export class Validator {
   private extractNameFromPath(filePath: string): string {
     const normalizedPath = FileSystemUtils.toPosixPath(filePath);
     const parts = normalizedPath.split('/');
-    
-    // Look for the directory name after 'specs' or 'changes'
-    for (let i = parts.length - 1; i >= 0; i--) {
-      if (parts[i] === 'specs' || parts[i] === 'changes') {
-        if (i < parts.length - 1) {
-          return parts[i + 1];
-        }
+
+    if (parts.at(-1) === 'spec.md') {
+      const specsIndex = parts.lastIndexOf('specs');
+      if (specsIndex !== -1 && specsIndex < parts.length - 2) {
+        return parts.slice(specsIndex + 1, -1).join('/');
       }
     }
-    
+
+    const changesIndex = parts.lastIndexOf('changes');
+    if (changesIndex !== -1 && changesIndex < parts.length - 1) {
+      return parts[changesIndex + 1];
+    }
+
     // Fallback to filename without extension if not in expected structure
     const fileName = parts[parts.length - 1] ?? '';
     const dotIndex = fileName.lastIndexOf('.');
